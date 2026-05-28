@@ -1,34 +1,49 @@
-import { Server } from "socket.io";
+import { Server, Socket } from "socket.io";
 
 export const setupSockets = (io: Server) => {
 
-  io.on("connection", (socket) => {
+  io.on("connection", (socket: Socket) => {
 
-    console.log("User connected:", socket.id);
+    console.log(`User connected: ${socket.id}`);
 
-    socket.on("join-room", (roomId: string) => {
+    // JOIN ROOM
+    socket.on("join-room", async (roomId: string) => {
 
-      socket.join(roomId);
+      try {
 
-      console.log(`${socket.id} joined ${roomId}`);
+        socket.join(roomId);
 
-      socket.to(roomId).emit("user-joined", {
-        socketId: socket.id
-      });
+        console.log(`${socket.id} joined room ${roomId}`);
+
+        socket.to(roomId).emit("user-joined", {
+          socketId: socket.id
+        });
+
+      } catch (error) {
+
+        console.error(error);
+
+        socket.emit("room-error", {
+          message: "Error joining room"
+        });
+
+      }
 
     });
 
+    // LEAVE ROOM
     socket.on("leave-room", (roomId: string) => {
 
       socket.leave(roomId);
 
-      console.log(`${socket.id} left ${roomId}`);
+      console.log(`${socket.id} left room ${roomId}`);
 
     });
 
+    // DISCONNECT
     socket.on("disconnect", () => {
 
-      console.log("Disconnected:", socket.id);
+      console.log(`Disconnected: ${socket.id}`);
 
     });
 
