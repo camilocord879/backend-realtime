@@ -2,12 +2,18 @@ import express from "express";
 import http from "http";
 import { Server } from "socket.io";
 import cors from "cors";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const app = express();
 
 app.use(cors());
+app.use(express.json());
 
 const server = http.createServer(app);
+
+const API_URL = process.env.API_URL || "http://localhost:3000";
 
 const io = new Server(server, {
   cors: {
@@ -31,19 +37,66 @@ io.on("connection", (socket) => {
 
   });
 
+  socket.on("leave-room", (roomId: string) => {
+
+    socket.leave(roomId);
+
+    console.log(`Usuario salió de sala ${roomId}`);
+
+  });
+
+  socket.on("send-message", async (data: { roomId: string; content: string; token: string }) => {
+
+    const { roomId, content, token } = data;
+
+    if (!roomId || !content || !content.trim()) {
+      socket.emit("message-error", { message: "El contenido del mensaje es requerido." });
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/api/messages`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify({ roomId, content: content.trim() }),
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({}));
+        socket.emit("message-error", { message: (errorBody as any).error || "Error al guardar mensaje." });
+        return;
+      }
+
+      const message = await response.json();
+
+      io.to(roomId).emit("new-message", message);
+
+    } catch (error) {
+      console.error("Error al enviar mensaje:", error);
+      socket.emit("message-error", { message: "Error interno al enviar mensaje." });
+    }
+
+  });
+
   socket.on("disconnect", () => {
     console.log("Usuario desconectado");
   });
 
 });
+
 app.get("/", (_req, res) => {
   res.json({
     message: "Realtime backend funcionando"
   });
 });
+
 server.listen(4000, () => {
   console.log("Realtime server running on port 4000");
 });
+
 app.get("/ping", (_req, res) => {
   res.json({
     status: "ok",
