@@ -15,9 +15,13 @@ const server = http.createServer(app);
 
 const API_URL = process.env.API_URL || "http://localhost:3000";
 
+const CLIENT_URL = process.env.CLIENT_URL || "*";
+
 const io = new Server(server, {
   cors: {
-    origin: "*",
+    origin: CLIENT_URL === "*" ? "*" : [CLIENT_URL, "http://localhost:5173"],
+    methods: ["GET", "POST"],
+    credentials: true,
   },
 });
 
@@ -93,8 +97,10 @@ app.get("/", (_req, res) => {
   });
 });
 
-server.listen(4000, () => {
-  console.log("Realtime server running on port 4000");
+const PORT = process.env.PORT || 4000;
+
+server.listen(PORT, () => {
+  console.log(`Realtime server running on port ${PORT}`);
 });
 
 app.get("/ping", (_req, res) => {
