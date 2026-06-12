@@ -25,28 +25,34 @@ const io = new Server(server, {
   },
 });
 
-// Track active users per room: Map<roomId, Set<socketId>>
-const roomParticipants = new Map<string, Set<string>>();
+// Track active users per room: Map<roomId, Map<socketId, username>>
+const roomParticipants = new Map<string, Map<string, string>>();
 
-function getRoomUsers(roomId: string): string[] {
-  return Array.from(roomParticipants.get(roomId) || []);
+function getRoomUsers(roomId: string): { socketId: string; username: string }[] {
+  const map = roomParticipants.get(roomId);
+  if (!map) return [];
+  return Array.from(map.entries()).map(([socketId, username]) => ({ socketId, username }));
 }
 
 io.on("connection", (socket: Socket) => {
   console.log("Usuario conectado:", socket.id);
 
-  socket.on("join-room", (roomId: string) => {
+  socket.on("join-room", (data: string | { roomId: string; username?: string }) => {
+    // Support both old format (string) and new format ({roomId, username})
+    const roomId = typeof data === "string" ? data : data.roomId;
+    const username = typeof data === "string" ? "Anónimo" : (data.username || "Anónimo");
+
     socket.join(roomId);
-    console.log(`Usuario unido a sala ${roomId}`);
+    console.log(`${username} (${socket.id}) unido a sala ${roomId}`);
 
-    // Track participant presence
+    // Track participant presence with username
     if (!roomParticipants.has(roomId)) {
-      roomParticipants.set(roomId, new Set());
+      roomParticipants.set(roomId, new Map());
     }
-    roomParticipants.get(roomId)!.add(socket.id);
+    roomParticipants.get(roomId)!.set(socket.id, username);
 
-    // Notify others that a new user joined
-    socket.to(roomId).emit("user-joined", { socketId: socket.id });
+    // Notify others that a new user joined (with username)
+    socket.to(roomId).emit("user-joined", { socketId: socket.id, username });
 
     // Send updated participants list to everyone in the room
     io.to(roomId).emit("room:participants", {
