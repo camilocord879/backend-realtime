@@ -120,21 +120,33 @@ io.on("connection", (socket: Socket) => {
 
   // ─── WebRTC Signaling ───────────────────────────────────────────
 
-  // Relay offer to other participants in the room
-  socket.on("webrtc:offer", ({ roomId, offer }: { roomId: string; offer: unknown }) => {
-    console.log(`[WebRTC] Offer from ${socket.id} in room ${roomId}`);
-    socket.to(roomId).emit("webrtc:offer", { offer, from: socket.id });
+  // Relay offer to a specific peer or to the room
+  socket.on("webrtc:offer", ({ roomId, offer, to }: { roomId: string; offer: unknown; to?: string }) => {
+    console.log(`[WebRTC] Offer from ${socket.id} in room ${roomId}${to ? ` to ${to}` : ""}`);
+    if (to) {
+      io.to(to).emit("webrtc:offer", { offer, from: socket.id });
+    } else {
+      socket.to(roomId).emit("webrtc:offer", { offer, from: socket.id });
+    }
   });
 
-  // Relay answer back to the caller
-  socket.on("webrtc:answer", ({ roomId, answer }: { roomId: string; answer: unknown }) => {
-    console.log(`[WebRTC] Answer from ${socket.id} in room ${roomId}`);
-    socket.to(roomId).emit("webrtc:answer", { answer, from: socket.id });
+  // Relay answer to a specific peer or to the room
+  socket.on("webrtc:answer", ({ roomId, answer, to }: { roomId: string; answer: unknown; to?: string }) => {
+    console.log(`[WebRTC] Answer from ${socket.id} in room ${roomId}${to ? ` to ${to}` : ""}`);
+    if (to) {
+      io.to(to).emit("webrtc:answer", { answer, from: socket.id });
+    } else {
+      socket.to(roomId).emit("webrtc:answer", { answer, from: socket.id });
+    }
   });
 
-  // Relay ICE candidates to other participants in the room
-  socket.on("webrtc:ice-candidate", ({ roomId, candidate }: { roomId: string; candidate: unknown }) => {
-    socket.to(roomId).emit("webrtc:ice-candidate", { candidate, from: socket.id });
+  // Relay ICE candidates to a specific peer or to the room
+  socket.on("webrtc:ice-candidate", ({ roomId, candidate, to }: { roomId: string; candidate: unknown; to?: string }) => {
+    if (to) {
+      io.to(to).emit("webrtc:ice-candidate", { candidate, from: socket.id });
+    } else {
+      socket.to(roomId).emit("webrtc:ice-candidate", { candidate, from: socket.id });
+    }
   });
 
   // ─── AV Stream Synchronization ─────────────────────────────────────
