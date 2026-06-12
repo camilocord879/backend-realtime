@@ -25,21 +25,55 @@ const io = new Server(server, {
   },
 });
 
+// Track active users per room: Map<roomId, Set<socketId>>
+const roomParticipants = new Map<string, Set<string>>();
+
+function getRoomUsers(roomId: string): string[] {
+  return Array.from(roomParticipants.get(roomId) || []);
+}
+
 io.on("connection", (socket: Socket) => {
   console.log("Usuario conectado:", socket.id);
 
   socket.on("join-room", (roomId: string) => {
     socket.join(roomId);
     console.log(`Usuario unido a sala ${roomId}`);
-    io.to(roomId).emit("user-joined", { socketId: socket.id });
+
+    // Track participant presence
+    if (!roomParticipants.has(roomId)) {
+      roomParticipants.set(roomId, new Set());
+    }
+    roomParticipants.get(roomId)!.add(socket.id);
+
+    // Notify others that a new user joined
+    socket.to(roomId).emit("user-joined", { socketId: socket.id });
+
+    // Send updated participants list to everyone in the room
+    io.to(roomId).emit("room:participants", {
+      roomId,
+      participants: getRoomUsers(roomId),
+    });
   });
 
   socket.on("leave-room", (roomId: string) => {
-
     socket.leave(roomId);
-
     console.log(`Usuario salió de sala ${roomId}`);
 
+    // Remove from participants tracking
+    const participants = roomParticipants.get(roomId);
+    if (participants) {
+      participants.delete(socket.id);
+      if (participants.size === 0) {
+        roomParticipants.delete(roomId);
+      }
+    }
+
+    // Notify remaining users
+    socket.to(roomId).emit("user-left", { socketId: socket.id });
+    io.to(roomId).emit("room:participants", {
+      roomId,
+      participants: getRoomUsers(roomId),
+    });
   });
 
   socket.on("send-message", async (data: { roomId: string; content: string; token: string }) => {
@@ -78,8 +112,73 @@ io.on("connection", (socket: Socket) => {
 
   });
 
+  // ─── WebRTC Signaling ───────────────────────────────────────────
+
+  // Relay offer to other participants in the room
+  socket.on("webrtc:offer", ({ roomId, offer }: { roomId: string; offer: unknown }) => {
+    console.log(`[WebRTC] Offer from ${socket.id} in room ${roomId}`);
+    socket.to(roomId).emit("webrtc:offer", { offer, from: socket.id });
+  });
+
+  // Relay answer back to the caller
+  socket.on("webrtc:answer", ({ roomId, answer }: { roomId: string; answer: unknown }) => {
+    console.log(`[WebRTC] Answer from ${socket.id} in room ${roomId}`);
+    socket.to(roomId).emit("webrtc:answer", { answer, from: socket.id });
+  });
+
+  // Relay ICE candidates to other participants in the room
+  socket.on("webrtc:ice-candidate", ({ roomId, candidate }: { roomId: string; candidate: unknown }) => {
+    socket.to(roomId).emit("webrtc:ice-candidate", { candidate, from: socket.id });
+  });
+
+  // ─── AV Stream Synchronization ─────────────────────────────────────
+
+  // User started streaming (audio/video)
+  socket.on("stream:start", ({ roomId }: { roomId: string }) => {
+    console.log(`[Stream] ${socket.id} started streaming in room ${roomId}`);
+    socket.to(roomId).emit("stream:started", { socketId: socket.id });
+  });
+
+  // User stopped streaming
+  socket.on("stream:stop", ({ roomId }: { roomId: string }) => {
+    console.log(`[Stream] ${socket.id} stopped streaming in room ${roomId}`);
+    socket.to(roomId).emit("stream:stopped", { socketId: socket.id });
+  });
+
+  // User toggled audio/video track
+  socket.on("stream:toggle-track", ({ roomId, kind, enabled }: { roomId: string; kind: "audio" | "video"; enabled: boolean }) => {
+    socket.to(roomId).emit("stream:track-toggled", {
+      socketId: socket.id,
+      kind,
+      enabled,
+    });
+  });
+
+  // Heartbeat to keep connection alive during active transmission
+  socket.on("stream:heartbeat", ({ roomId }: { roomId: string }) => {
+    socket.to(roomId).emit("stream:heartbeat-ack", { socketId: socket.id });
+  });
+
+  // ─── Disconnect ───────────────────────────────────────────────────
+
   socket.on("disconnect", () => {
-    console.log("Usuario desconectado");
+    console.log("Usuario desconectado:", socket.id);
+
+    // Remove from all rooms and notify participants
+    roomParticipants.forEach((participants, roomId) => {
+      if (participants.has(socket.id)) {
+        participants.delete(socket.id);
+        socket.to(roomId).emit("user-left", { socketId: socket.id });
+        io.to(roomId).emit("room:participants", {
+          roomId,
+          participants: getRoomUsers(roomId),
+        });
+
+        if (participants.size === 0) {
+          roomParticipants.delete(roomId);
+        }
+      }
+    });
   });
 });
 
