@@ -1,6 +1,6 @@
 import express from "express";
 import http from "http";
-import { Server } from "socket.io";
+import { Server, Socket } from "socket.io";
 import cors from "cors";
 
 const app = express();
@@ -11,30 +11,24 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: "*",
+    origin: "http://localhost:5173",
+    methods: ["GET", "POST"],
+    credentials: true,
   },
 });
 
-io.on("connection", (socket) => {
-
+io.on("connection", (socket: Socket) => {
   console.log("Usuario conectado:", socket.id);
 
   socket.on("join-room", (roomId: string) => {
-
     socket.join(roomId);
-
     console.log(`Usuario unido a sala ${roomId}`);
-
-    io.to(roomId).emit("user-joined", {
-      socketId: socket.id,
-    });
-
+    io.to(roomId).emit("user-joined", { socketId: socket.id });
   });
 
   socket.on("disconnect", () => {
     console.log("Usuario desconectado");
   });
-
 });
 app.get("/", (_req, res) => {
   res.json({
